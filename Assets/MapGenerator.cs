@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class MapGenerator : MonoBehaviour
@@ -15,6 +13,12 @@ public class MapGenerator : MonoBehaviour
     [Range(0, 100)]
     public int fillPercentage;
 
+    //Hilbert Curve:
+    Vector2[] hilbertPts;
+    public int hilbertOrder;
+    public int hilbertSize;
+    int hilbertIndex;
+
     void Update()
     {
         CellularAutomata();
@@ -24,6 +28,14 @@ public class MapGenerator : MonoBehaviour
     {
         seed = (seed.Length <= 0) ? Time.time.ToString() : seed;
         pseudoRandom = new System.Random(seed.GetHashCode());
+
+        hilbertPts = new Vector2[(int)Mathf.Pow(4, hilbertOrder)];
+        hilbertIndex = 0;
+
+        HilbertCurve(0.0f, 0.0f, 1.0f * Mathf.Max(width, height),
+                     0.0f, 0.0f, 1.0f * Mathf.Max(width, height),
+                     hilbertOrder);
+
 
         GenerateMap();
 
@@ -107,9 +119,45 @@ public class MapGenerator : MonoBehaviour
         }
     }
 
+
+    void HilbertCurve(float x, float y, float xi, float xj, float yi, float yj, int n)
+    {
+        /*
+         * Hilbert Curve - Original algorithm by Andrew Cumming: 
+         * http://www.fundza.com/algorithmic/space_filling/hilbert/basics/
+         * def hilbert(x0, y0, xi, xj, yi, yj, n):
+         *   if n <= 0:
+         *     X = x0 + (xi + yi)/2
+         *     Y = y0 + (xj + yj)/2
+         *
+         *   # Output the coordinates of the cv
+         *   print("%s %s 0" % (X, Y))
+         *   else:
+         *     hilbert(x0,               y0,               yi/2, yj/2, xi/2, xj/2, n - 1)
+         *     hilbert(x0 + xi/2,        y0 + xj/2,        xi/2, xj/2, yi/2, yj/2, n - 1)
+         *     hilbert(x0 + xi/2 + yi/2, y0 + xj/2 + yj/2, xi/2, xj/2, yi/2, yj/2, n - 1)
+         *     hilbert(x0 + xi/2 + yi,   y0 + xj/2 + yj,  -yi/2,-yj/2,-xi/2,-xj/2, n - 1)
+         */
+
+        if (n <= 0)
+        {
+            float X = x + (xi + yi) / 2;
+            float Y = y + (xj + yj) / 2;
+            hilbertPts[hilbertIndex] = new Vector2((int)X * hilbertSize, (int)Y * hilbertSize);
+            hilbertIndex++;
+        }
+        else
+        {
+            HilbertCurve(x, y, yi / 2, yj / 2, xi / 2, xj / 2, n - 1);
+            HilbertCurve(x + xi / 2, y + xj / 2, xi / 2, xj / 2, yi / 2, yj / 2, n - 1);
+            HilbertCurve(x + xi / 2 + yi / 2, y + xj / 2 + yj / 2, xi / 2, xj / 2, yi / 2, yj / 2, n - 1);
+            HilbertCurve(x + xi / 2 + yi, y + xj / 2 + yj, -yi / 2, -yj / 2, -xi / 2, -xj / 2, n - 1);
+        }
+    }
+
     private void OnDrawGizmos()
     {
-        if(generatedMap != null)
+        if (generatedMap != null)
         {
             for (int x = 0; x < width; x++)
             {
@@ -119,6 +167,20 @@ public class MapGenerator : MonoBehaviour
                     Vector3 pos = new Vector3(x + .5f, 0, y + .5f);
                     Gizmos.DrawCube(pos, Vector3.one);
                 }
+            }
+        }
+
+        if (hilbertPts != null)
+        {
+            for (int i = 0; i < hilbertPts.Length - 1; i++)
+            {
+                if (hilbertPts[i].Equals(Vector2.zero) ||
+                    hilbertPts[i + 1].Equals(Vector2.zero))
+                    continue;
+
+                Gizmos.color = Color.yellow;
+                Gizmos.DrawLine(new Vector3(hilbertPts[i].x + .5f, 0, hilbertPts[i].y + .5f),
+                                new Vector3(hilbertPts[i + 1].x + .5f, 0, hilbertPts[i + 1].y + .5f));
             }
         }
     }
