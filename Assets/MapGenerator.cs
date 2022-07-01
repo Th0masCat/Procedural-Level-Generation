@@ -19,6 +19,8 @@ public class MapGenerator : MonoBehaviour
     public int hilbertSize;
     int hilbertIndex;
 
+    int[,] hilbertPointsInt;
+
     void Update()
     {
         CellularAutomata();
@@ -154,6 +156,77 @@ public class MapGenerator : MonoBehaviour
             HilbertCurve(x + xi / 2 + yi, y + xj / 2 + yj, -yi / 2, -yj / 2, -xi / 2, -xj / 2, n - 1);
         }
     }
+
+    void GenerateGuidelines()
+    {
+        // 4 points per one curve segment chunk
+        hilbertPts = new Vector2[(int)Mathf.Pow(4, hilbertOrder)];
+        hilbertPointsInt = new int[Mathf.Max(width, height), Mathf.Max(width, height)];
+        hilbertIndex = 0;
+
+        HilbertCurve(0.0f, 0.0f, 1.0f * Mathf.Max(width, height),
+                     0.0f, 0.0f, 1.0f * Mathf.Max(width, height),
+                     hilbertOrder);
+
+        // clear curve's grid by setting all cells to 0
+        for (int x = 1; x < width - 1; x++)
+        {
+            for (int y = 1; y < height - 1; y++)
+            {
+                hilbertPointsInt[x, y] = 0;
+            }
+        }
+
+        // hilbert curve connection nodes
+        for (int i = 0; i < hilbertPts.Length; i++)
+        {
+            int x = (int)hilbertPts[i].x;
+            int y = (int)hilbertPts[i].y;
+
+            if (x < Mathf.Max(width, height) && x >= 0 &&
+                y < Mathf.Max(width, height) && y >= 0)
+            {
+                hilbertPointsInt[x, y] = 1;
+            }
+        }
+
+        // filling in all cells between hilbert curve nodes
+        for (int i = 0; i < hilbertPts.Length - 1; i++)
+        {
+            int x_curr = (int)hilbertPts[i].x;
+            int y_curr = (int)hilbertPts[i].y;
+            int x_next = (int)hilbertPts[i + 1].x;
+            int y_next = (int)hilbertPts[i + 1].y;
+            int x_dist = (int)Mathf.Abs(x_curr - x_next);
+            int y_dist = (int)Mathf.Abs(y_curr - y_next);
+
+            Vector2 dir = (hilbertPts[i + 1] - hilbertPts[i]).normalized;
+
+            if (x_dist == 0 && y_dist > 0)
+            {
+                for (int y = 0; y < y_dist; y++)
+                {
+                    if (x_curr >= 0 && x_curr < Mathf.Max(width, height) &&
+                        y_curr + ((int)dir.y * y) >= 0 && y_curr + ((int)dir.y * y) < Mathf.Max(width, height))
+                    {
+                        hilbertPointsInt[x_curr, y_curr + ((int)dir.y * y)] = 1;
+                    }
+                }
+            }
+            else if (x_dist > 0 && y_dist == 0)
+            {
+                for (int x = 0; x < x_dist; x++)
+                {
+                    if (x_curr + ((int)dir.x * x) >= 0 && x_curr + ((int)dir.x * x) < Mathf.Max(width, height) &&
+                        y_curr >= 0 && y_curr < Mathf.Max(width, height))
+                    {
+                        hilbertPointsInt[x_curr + ((int)dir.x * x), y_curr] = 1;
+                    }
+                }
+            }
+        }
+    }
+
 
     private void OnDrawGizmos()
     {
