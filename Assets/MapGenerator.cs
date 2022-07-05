@@ -38,7 +38,7 @@ public class MapGenerator : MonoBehaviour
                      0.0f, 0.0f, 1.0f * Mathf.Max(width, height),
                      hilbertOrder);
 
-
+        GenerateGuidelines();
         GenerateMap();
 
         for (int i = 0; i < 5; i++)
@@ -242,6 +242,20 @@ public class MapGenerator : MonoBehaviour
                 }
             }
         }
+
+        if (hilbertPointsInt != null)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    Gizmos.color = (hilbertPointsInt[x, y] == 1) ? Color.cyan : Color.clear;
+                    Vector3 pos = new Vector3(x + .5f, 0, y + .5f);
+                    Gizmos.DrawCube(pos, Vector3.one);
+                }
+            }
+        }
+
 
         if (hilbertPts != null)
         {
