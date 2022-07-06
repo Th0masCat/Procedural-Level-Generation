@@ -334,6 +334,8 @@ MonoBehaviour:
   height: 200
   seed: level1
   fillPercentage: 30
+  hilbertOrder: 2
+  hilbertSize: 2
 --- !u!4 &2141226481
 Transform:
   m_ObjectHideFlags: 0
