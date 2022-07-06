@@ -19,7 +19,15 @@ public class MapGenerator : MonoBehaviour
     public int hilbertSize;
     int hilbertIndex;
 
+    [SerializeField]
+    int shiftX = 0, shiftY = 0;
+
+
     int[,] hilbertPointsInt;
+
+    public int pathWidth;
+
+
 
     void Update()
     {
@@ -77,10 +85,16 @@ public class MapGenerator : MonoBehaviour
                     generatedMap[x, y] = 1;
                 else if (neighbours < 4)
                     generatedMap[x, y] = 0;
+
+                if (hilbertPointsInt[x, y] == 1)
+                {
+                    generatedMap[x, y] = 1;
+                    if (neighbours > 4)
+                        FloodFillNeighboursWithValue(x, y, 1);
+                }
             }
         }
     }
-
 
     int getNeighbours(int x, int y, int[,] m)
     {
@@ -121,7 +135,6 @@ public class MapGenerator : MonoBehaviour
         }
     }
 
-
     void HilbertCurve(float x, float y, float xi, float xj, float yi, float yj, int n)
     {
         /*
@@ -145,7 +158,9 @@ public class MapGenerator : MonoBehaviour
         {
             float X = x + (xi + yi) / 2;
             float Y = y + (xj + yj) / 2;
-            hilbertPts[hilbertIndex] = new Vector2((int)X * hilbertSize, (int)Y * hilbertSize);
+
+
+            hilbertPts[hilbertIndex] = new Vector2((int)X * hilbertSize + shiftX, (int)Y * hilbertSize + shiftY);
             hilbertIndex++;
         }
         else
@@ -163,6 +178,8 @@ public class MapGenerator : MonoBehaviour
         hilbertPts = new Vector2[(int)Mathf.Pow(4, hilbertOrder)];
         hilbertPointsInt = new int[Mathf.Max(width, height), Mathf.Max(width, height)];
         hilbertIndex = 0;
+        shiftX = pseudoRandom.Next(-Mathf.Max(width, height) * (hilbertSize - 1), 0);
+        shiftY = pseudoRandom.Next(-Mathf.Max(width, height) * (hilbertSize - 1), 0);
 
         HilbertCurve(0.0f, 0.0f, 1.0f * Mathf.Max(width, height),
                      0.0f, 0.0f, 1.0f * Mathf.Max(width, height),
@@ -227,6 +244,22 @@ public class MapGenerator : MonoBehaviour
         }
     }
 
+    void FloodFillNeighboursWithValue(int x, int y, int val)
+    {
+        for (int i = -pathWidth; i <= pathWidth; i++)
+        {
+            for (int j = -pathWidth; j <= pathWidth; j++)
+            {
+                int i_x = i + x;
+                int j_y = j + y;
+
+                if (i_x < 0 || j_y < 0 || i_x > width - 1 || j_y > height - 1)
+                    continue;
+
+                generatedMap[i_x, j_y] = val;
+            }
+        }
+    }
 
     private void OnDrawGizmos()
     {
