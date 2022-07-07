@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 // TR - top-right, TL - top-left, BL - bottom-left, BR - bottom-right, N - none,
@@ -46,6 +47,9 @@ public class MapGenerator : MonoBehaviour
     }
 
     Dictionary<Vector2, ArrayList> segments;
+
+    public bool isDisplayNegativePath;
+    public bool isDisplayGuidelines;
 
     private void Start()
     {
@@ -271,8 +275,15 @@ public class MapGenerator : MonoBehaviour
             }
         }
 
+        // filling in all cells between hilbert curve nodes
+        for (int i = 0; i < hilbertPts.Length - 1; i++)
+        {
+            ImprintPathBetweenCells(hilbertPts[i], hilbertPts[i + 1], hilbertPointsInt);
+        }
+
         CreateCurveCorners();
         CreateSegments();
+        CreateCriticalPath();
         CreateNegativePath();
 
     }
@@ -645,8 +656,135 @@ public class MapGenerator : MonoBehaviour
         Debug.Log("Segments: " + segments.Count);
     }
 
-    private void OnDrawGizmos()
+    void CreateCriticalPath()
     {
+        // if we have more than one segments, let's connect them!
+        if (segments != null && segments.Count > 1)
+        {
+            Dictionary<string, List<KeyValuePair<Vector2Int, Vector2Int>>> list = new Dictionary<string, List<KeyValuePair<Vector2Int, Vector2Int>>>();
+
+            for (int cnt = 0; cnt < segments.Count - 1; cnt++)
+            {
+                ArrayList cellsA = segments.ElementAt(cnt).Value;
+                List<KeyValuePair<Vector2Int, Vector2Int>> segmentConnectors = new List<KeyValuePair<Vector2Int, Vector2Int>>();
+                int i = 0;
+
+                do
+                {
+                    i++;
+                    ArrayList cellsB = segments.ElementAt(cnt + i).Value;
+                    segmentConnectors = FindConnectorsBetweenSegments(cellsA, cellsB, segmentConnectors);
+                }
+                while (segmentConnectors.Count == 0);
+
+                string key = cnt + "_" + i;
+                list.Add(key, segmentConnectors);
+            }
+
+            foreach (KeyValuePair<string, List<KeyValuePair<Vector2Int, Vector2Int>>> item in list)
+            {
+                List<KeyValuePair<Vector2Int, Vector2Int>> connectors = item.Value;
+
+                if (connectors.Count < 1) continue;
+
+                int rand = pseudoRandom.Next(0, connectors.Count);
+                Vector2Int pointFrom = (Vector2Int)connectors.ElementAt(rand).Key;
+                Vector2Int pointTo = (Vector2Int)connectors.ElementAt(rand).Value;
+
+                ImprintPathBetweenCells(pointFrom, pointTo, hilbertPointsInt);
+            }
+        }
+    }
+
+    bool AreCellsLeveled(Vector2 pointA, Vector2 pointB)
+    {
+        // for verifying if two points are connectable
+        // we check whether they are on the same x or y axis
+        if (pointA.x == pointB.x || pointA.y == pointB.y)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    List<KeyValuePair<Vector2Int, Vector2Int>> FindConnectorsBetweenSegments(
+        ArrayList cellsA, ArrayList cellsB,
+        List<KeyValuePair<Vector2Int, Vector2Int>> segmentConnectors)
+    {
+        for (int i = 0; i < cellsA.Count; i++)
+        {
+            for (int j = 0; j < cellsB.Count; j++)
+            {
+                Vector2Int posA = (Vector2Int)cellsA[i];
+                Vector2Int posB = (Vector2Int)cellsB[j];
+                int x_dist = (int)Mathf.Abs(posA.x - posB.x);
+                int y_dist = (int)Mathf.Abs(posA.y - posB.y);
+                Vector2 dir = ((Vector2)posB - (Vector2)posA).normalized;
+
+                if (AreCellsLeveled(posA, posB))
+                {
+                    if (x_dist == 0 && y_dist > 0)
+                    {
+                        if (hilbertPointsInt[posA.x, posA.y + (int)dir.y] == 1)
+                            continue;
+                    }
+                    else if (x_dist > 0 && y_dist == 0)
+                    {
+                        if (hilbertPointsInt[posA.x + (int)dir.x, posA.y] == 1)
+                            continue;
+                    }
+                    segmentConnectors.Add(new KeyValuePair<Vector2Int, Vector2Int>(posA, posB));
+                }
+            }
+        }
+
+        return segmentConnectors;
+    }
+
+    void ImprintPathBetweenCells(Vector2 pointFrom, Vector2 pointTo, int[,] map)
+    {
+        // filling in all cells between hilbert curve nodes
+        int x_curr = (int)pointFrom.x;
+        int y_curr = (int)pointFrom.y;
+        int x_next = (int)pointTo.x;
+        int y_next = (int)pointTo.y;
+        int x_dist = (int)Mathf.Abs(x_curr - x_next);
+        int y_dist = (int)Mathf.Abs(y_curr - y_next);
+
+        Vector2 dir = ((Vector2)pointTo - (Vector2)pointFrom).normalized;
+
+        if (x_dist == 0 && y_dist > 0)
+        {
+            for (int y = 0; y < y_dist; y++)
+            {
+                if (x_curr >= 0 && x_curr < Mathf.Max(width, height) &&
+                    y_curr + ((int)dir.y * y) >= 0 &&
+                    y_curr + ((int)dir.y * y) < Mathf.Max(width, height))
+                {
+                    map[x_curr, y_curr + ((int)dir.y * y)] = 1;
+                }
+            }
+        }
+        else if (x_dist > 0 && y_dist == 0)
+        {
+            for (int x = 0; x < x_dist; x++)
+            {
+                if (x_curr + ((int)dir.x * x) >= 0 &&
+                    x_curr + ((int)dir.x * x) < Mathf.Max(width, height) &&
+                    y_curr >= 0 && y_curr < Mathf.Max(width, height))
+                {
+                    map[x_curr + ((int)dir.x * x), y_curr] = 1;
+                }
+            }
+        }
+    }
+
+    void OnDrawGizmos()
+    {
+
         if (generatedMap != null)
         {
             for (int x = 0; x < width; x++)
@@ -660,84 +798,99 @@ public class MapGenerator : MonoBehaviour
             }
         }
 
-        if (hilbertPointsInt != null)
+        if (isDisplayGuidelines)
         {
-            for (int x = 0; x < width; x++)
+            if (hilbertPointsInt != null)
             {
-                for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
                 {
-                    Gizmos.color = (hilbertPointsInt[x, y] == 1) ? Color.cyan : Color.clear;
-                    Vector3 pos = new Vector3(x + .5f, 0, y + .5f);
-                    Gizmos.DrawCube(pos, Vector3.one);
-                }
-            }
-        }
-
-        if (hilbertNegativePointsInt != null)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                for (int y = 0; y < height; y++)
-                {
-                    Gizmos.color = (hilbertNegativePointsInt[x, y] == 1) ? Color.green : Color.clear;
-                    Vector3 pos = new Vector3(x + .5f, 0, y + .5f);
-                    Gizmos.DrawCube(pos, Vector3.one);
-                }
-            }
-        }
-
-        if (hilbertPts != null)
-        {
-            for (int i = 0; i < hilbertPts.Length - 1; i++)
-            {
-                if (hilbertPts[i].Equals(Vector2.zero) ||
-                    hilbertPts[i + 1].Equals(Vector2.zero))
-                    continue;
-
-                Gizmos.color = Color.yellow;
-                Gizmos.DrawLine(new Vector3(hilbertPts[i].x + .5f, 0, hilbertPts[i].y + .5f),
-                                new Vector3(hilbertPts[i + 1].x + .5f, 0, hilbertPts[i + 1].y + .5f));
-            }
-        }
-
-        if (curvePoints != null)
-        {
-            for (int i = 0; i < curvePoints.Count; i++)
-            {
-                CurvePoint cPoint = (CurvePoint)curvePoints[i];
-                Gizmos.color = (hilbertPointsInt[cPoint.x, cPoint.y] == 1) ? Color.red : Color.clear;
-
-                Vector3 pos = new Vector3(cPoint.x + .5f, 0, cPoint.y + .5f);
-                Gizmos.DrawCube(pos, Vector3.one * 2);
-            }
-        }
-
-        // display segments
-        if (segments != null)
-        {
-            foreach (KeyValuePair<Vector2, ArrayList> segment in segments)
-            {
-                for (int i = 0; i < segment.Value.Count; i++)
-                {
-                    Vector2Int pos = (Vector2Int)segment.Value[i];
-                    Gizmos.color = Color.yellow;
-                    Vector3 pos3 = new Vector3(pos.x + .5f, 0, pos.y + .5f);
-                    Gizmos.DrawCube(pos3, Vector3.one * 2);
-
-                    if (i == segment.Value.Count - 1)
+                    for (int y = 0; y < height; y++)
                     {
-                        Vector3 lastPoint = new Vector3(pos.x + .5f, 0, pos.y + .5f);
-                        Gizmos.color = Color.red;
-                        Gizmos.DrawSphere(lastPoint, 2f);
+                        Gizmos.color = (hilbertPointsInt[x, y] == 1) ? Color.cyan : Color.clear;
+                        Vector3 pos = new Vector3(x + .5f, 0, y + .5f);
+                        Gizmos.DrawCube(pos, Vector3.one);
                     }
                 }
+            }
 
-                Vector2 posKey = (Vector2)segment.Key;
-                Vector3 posKey3 = new Vector3(posKey.x + .5f, 0, posKey.y + .5f);
-                Gizmos.color = Color.red;
-                Gizmos.DrawSphere(posKey3, 2f);
+            if (hilbertNegativePointsInt != null && isDisplayNegativePath)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    for (int y = 0; y < height; y++)
+                    {
+                        Gizmos.color = (hilbertNegativePointsInt[x, y] == 1) ? Color.green : Color.clear;
+                        Vector3 pos = new Vector3(x + .5f, 0, y + .5f);
+                        Gizmos.DrawCube(pos, Vector3.one);
+                    }
+                }
+            }
+
+            if (hilbertPts != null)
+            {
+                for (int i = 0; i < hilbertPts.Length - 1; i++)
+                {
+                    if (hilbertPts[i].Equals(Vector2.zero) ||
+                        hilbertPts[i + 1].Equals(Vector2.zero))
+                        continue;
+
+                    Gizmos.color = Color.yellow;
+                    Gizmos.DrawLine(new Vector3(hilbertPts[i].x + .5f, 0, hilbertPts[i].y + .5f),
+                                    new Vector3(hilbertPts[i + 1].x + .5f, 0, hilbertPts[i + 1].y + .5f));
+                }
+            }
+
+            // display corners
+            if (curvePoints != null)
+            {
+                for (int i = 0; i < curvePoints.Count; i++)
+                {
+                    CurvePoint cPoint = (CurvePoint)curvePoints[i];
+                    Gizmos.color = (hilbertPointsInt[cPoint.x, cPoint.y] == 1) ? Color.red : Color.clear;
+
+                    /*if (cPoint.type.Equals(CurveCellTypee.EL))
+                        Gizmos.color = Color.blue;
+                    else if (cPoint.type.Equals(CurveCellTypee.ER))
+                        Gizmos.color = Color.magenta;
+                    else if (cPoint.type.Equals(CurveCellTypee.ET))
+                        Gizmos.color = Color.green;
+                    else if (cPoint.type.Equals(CurveCellTypee.EB))
+                        Gizmos.color = Color.cyan;*/
+
+                    Vector3 pos = new Vector3(cPoint.x + .5f, 0, cPoint.y + .5f);
+                    Gizmos.DrawCube(pos, Vector3.one * 2);
+                }
+            }
+
+            // display segments
+            if (segments != null)
+            {
+                foreach (KeyValuePair<Vector2, ArrayList> segment in segments)
+                {
+                    for (int i = 0; i < segment.Value.Count; i++)
+                    {
+                        Vector2Int pos = (Vector2Int)segment.Value[i];
+                        Gizmos.color = Color.yellow;
+                        Vector3 pos3 = new Vector3(pos.x + .5f, 0, pos.y + .5f);
+                        Gizmos.DrawCube(pos3, Vector3.one * 2);
+
+                        if (i == segment.Value.Count - 1)
+                        {
+                            Vector3 lastPoint = new Vector3(pos.x + .5f, 0, pos.y + .5f);
+                            Gizmos.color = Color.red;
+                            Gizmos.DrawSphere(lastPoint, 2f);
+                        }
+                    }
+
+                    Vector2 posKey = (Vector2)segment.Key;
+                    Vector3 posKey3 = new Vector3(posKey.x + .5f, 0, posKey.y + .5f);
+                    Gizmos.color = Color.red;
+                    Gizmos.DrawSphere(posKey3, 2f);
+                }
             }
         }
+
+
     }
 
 
