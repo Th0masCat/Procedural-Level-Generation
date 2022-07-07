@@ -339,6 +339,7 @@ MonoBehaviour:
   shiftX: 0
   shiftY: 0
   pathWidth: 10
+  negativePathGirth: 18
 --- !u!4 &2141226481
 Transform:
   m_ObjectHideFlags: 0

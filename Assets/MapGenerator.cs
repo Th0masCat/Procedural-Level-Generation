@@ -1,4 +1,11 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
+
+// TR - top-right, TL - top-left, BL - bottom-left, BR - bottom-right, N - none,
+// EL - edge-left, ET - edge-top, ER - edge-right, EB - edge-bottom,
+// H - horizontal (left = 1, right = 1), V - vertical (top = 1, bottom = 1)
+public enum CurveCellType { TR, TL, BL, BR, N, EL, ET, ER, EB, H, V }
 
 public class MapGenerator : MonoBehaviour
 {
@@ -22,12 +29,29 @@ public class MapGenerator : MonoBehaviour
     [SerializeField]
     int shiftX = 0, shiftY = 0;
 
-
     int[,] hilbertPointsInt;
 
     public int pathWidth;
 
+    //Negative path 
+    int[,] hilbertNegativePointsInt;
+    public int negativePathGirth;
 
+    ArrayList curvePoints;
+    struct CurvePoint
+    {
+        public int x;
+        public int y;
+        public CurveCellType type;
+    }
+
+    Dictionary<Vector2, ArrayList> segments;
+
+    private void Start()
+    {
+        curvePoints = new ArrayList();
+        segments = new Dictionary<Vector2, ArrayList>();
+    }
 
     void Update()
     {
@@ -85,6 +109,8 @@ public class MapGenerator : MonoBehaviour
                     generatedMap[x, y] = 1;
                 else if (neighbours < 4)
                     generatedMap[x, y] = 0;
+
+                generatedMap[x, y] = (hilbertNegativePointsInt[x, y] == 1) ? 0 : generatedMap[x, y];
 
                 if (hilbertPointsInt[x, y] == 1)
                 {
@@ -181,6 +207,8 @@ public class MapGenerator : MonoBehaviour
         shiftX = pseudoRandom.Next(-Mathf.Max(width, height) * (hilbertSize - 1), 0);
         shiftY = pseudoRandom.Next(-Mathf.Max(width, height) * (hilbertSize - 1), 0);
 
+        hilbertNegativePointsInt = new int[width, height];
+
         HilbertCurve(0.0f, 0.0f, 1.0f * Mathf.Max(width, height),
                      0.0f, 0.0f, 1.0f * Mathf.Max(width, height),
                      hilbertOrder);
@@ -242,6 +270,11 @@ public class MapGenerator : MonoBehaviour
                 }
             }
         }
+
+        CreateCurveCorners();
+        CreateSegments();
+        CreateNegativePath();
+
     }
 
     void FloodFillNeighboursWithValue(int x, int y, int val)
@@ -259,6 +292,357 @@ public class MapGenerator : MonoBehaviour
                 generatedMap[i_x, j_y] = val;
             }
         }
+    }
+
+    int GetNeighboursNegativePathCellCount(int x, int y)
+    {
+        int neighbors = 0;
+        for (int i = -negativePathGirth; i <= negativePathGirth; i++)
+        {
+            for (int j = -negativePathGirth; j <= negativePathGirth; j++)
+            {
+                int i_x = i + x;
+                int j_y = j + y;
+
+                if (i_x <= 0 || j_y <= 0 || i_x > width - 1 || j_y > height - 1)
+                    neighbors += 1;
+                else
+                    neighbors += hilbertPointsInt[i_x, j_y];
+            }
+        }
+
+        neighbors -= hilbertPointsInt[x, y];
+
+        return neighbors;
+    }
+
+    void CreateNegativePath()
+    {
+        // creating 'negative' curve map
+        for (int x = 1; x < width - 1; x++)
+        {
+            for (int y = 1; y < height - 1; y++)
+            {
+                hilbertNegativePointsInt[x, y] = (hilbertPointsInt[x, y] == 1) ? 0 : 1;
+            }
+        }
+
+        // trim 'negative' curve map
+        for (int x = 1; x < width - 1; x++)
+        {
+            for (int y = 1; y < height - 1; y++)
+            {
+                int neighbors = GetNeighboursNegativePathCellCount(x, y);
+                hilbertNegativePointsInt[x, y] = (neighbors > 0) ? 0 : hilbertNegativePointsInt[x, y];
+            }
+        }
+    }
+
+    CurvePoint GetCurvePoint(int x, int y)
+    {
+        int x_left = x - 1;
+        int x_right = x + 1;
+
+        int y_bottom = y - 1;
+        int y_top = y + 1;
+
+        CurvePoint cell = new CurvePoint();
+        cell.x = x;
+        cell.y = y;
+        cell.type = CurveCellType.N;
+
+        if (y_bottom < 0)
+        {
+            // EB - edge-bottom
+            if (y_bottom == -1 &&
+                hilbertPointsInt[x, y] == 1 &&
+                hilbertPointsInt[x_right, y] == 0 &&
+                hilbertPointsInt[x, y_top] == 1 &&
+                hilbertPointsInt[x_left, y] == 0)
+            {
+                cell.type = CurveCellType.EB;
+            }
+        }
+        else if (x_left < 0)
+        {
+            // EL - edge-left
+            if (x_left == -1 &&
+                hilbertPointsInt[x, y] == 1 &&
+                hilbertPointsInt[x_right, y] == 1 &&
+                hilbertPointsInt[x, y_top] == 0 &&
+                hilbertPointsInt[x, y_bottom] == 0)
+            {
+                cell.type = CurveCellType.EL;
+            }
+        }
+        else if (x_right > width - 1)
+        {
+            // ER - edge-right
+            if (x_right == width &&
+                hilbertPointsInt[x, y] == 1 &&
+                hilbertPointsInt[x_left, y] == 1 &&
+                hilbertPointsInt[x, y_top] == 0 &&
+                hilbertPointsInt[x, y_bottom] == 0)
+            {
+                cell.type = CurveCellType.ER;
+            }
+        }
+        else if (y_top > height - 1)
+        {
+            // ET - edge-top
+            if (y_top == height &&
+                hilbertPointsInt[x, y] == 1 &&
+                hilbertPointsInt[x_left, y] == 0 &&
+                hilbertPointsInt[x, y_top] == 0 &&
+                hilbertPointsInt[x, y_bottom] == 1)
+            {
+                cell.type = CurveCellType.ET;
+            }
+        }
+        // We are dealing with 'edge' cell
+        else if (x_left == 0 || x_right == width - 1 ||
+                 y_bottom == 0 || y_top == height - 1)
+        {
+            // ER - edge-right
+            if (x_right + 1 == width &&
+                hilbertPointsInt[x_right, y] == 1 &&
+                hilbertPointsInt[x, y] == 1 &&
+                hilbertPointsInt[x, y_top] == 0 &&
+                hilbertPointsInt[x, y_bottom] == 0)
+            {
+                cell.type = CurveCellType.ER;
+            }
+            // EL - edge-left
+            else if (x_left == 0 &&
+                     hilbertPointsInt[x_left, y] == 1 &&
+                     hilbertPointsInt[x, y] == 1 &&
+                     hilbertPointsInt[x, y_top] == 0 &&
+                     hilbertPointsInt[x, y_bottom] == 0)
+            {
+                cell.type = CurveCellType.EL;
+            }
+            // ET - edge-top
+            else if (y_top + 1 == height &&
+                     hilbertPointsInt[x_left, y] == 0 &&
+                     hilbertPointsInt[x_right, y] == 0 &&
+                     hilbertPointsInt[x, y] == 1 &&
+                     hilbertPointsInt[x, y_bottom] == 1)
+            {
+                cell.type = CurveCellType.ET;
+            }
+            // EB - edge-bottom
+            else if (y_bottom == 0 &&
+                     hilbertPointsInt[x_left, y] == 0 &&
+                     hilbertPointsInt[x_right, y] == 0 &&
+                     hilbertPointsInt[x, y_top] == 1 &&
+                     hilbertPointsInt[x, y] == 1)
+            {
+                cell.type = CurveCellType.EB;
+            }
+        }
+        else if (x_left > 0 && x_right < width - 1 &&
+                 y_bottom > 0 && y_top < height - 1)
+        {
+            // H - horizontal
+            if (hilbertPointsInt[x_left, y] == 1 &&
+                hilbertPointsInt[x_right, y] == 1 &&
+                hilbertPointsInt[x, y_top] == 0 &&
+                hilbertPointsInt[x, y_bottom] == 0)
+            {
+                cell.type = CurveCellType.H;
+            }
+            // V - vertical
+            else if (hilbertPointsInt[x_left, y] == 0 &&
+                     hilbertPointsInt[x_right, y] == 0 &&
+                     hilbertPointsInt[x, y_top] == 1 &&
+                     hilbertPointsInt[x, y_bottom] == 1)
+            {
+                cell.type = CurveCellType.V;
+            }
+            // TL - top-left
+            else if (hilbertPointsInt[x_left, y] == 1 &&
+                     hilbertPointsInt[x_right, y] == 0 &&
+                     hilbertPointsInt[x, y_top] == 0 &&
+                     hilbertPointsInt[x, y_bottom] == 1)
+            {
+                cell.type = CurveCellType.TL;
+            }
+            // TR - top-right
+            else if (hilbertPointsInt[x_left, y] == 0 &&
+                     hilbertPointsInt[x_right, y] == 1 &&
+                     hilbertPointsInt[x, y_top] == 0 &&
+                     hilbertPointsInt[x, y_bottom] == 1)
+            {
+                cell.type = CurveCellType.TR;
+            }
+            // BL - bottom-left
+            else if (hilbertPointsInt[x_left, y] == 1 &&
+                     hilbertPointsInt[x_right, y] == 0 &&
+                     hilbertPointsInt[x, y_top] == 1 &&
+                     hilbertPointsInt[x, y_bottom] == 0)
+            {
+                cell.type = CurveCellType.BL;
+            }
+            // BR - bottom-right
+            else if (hilbertPointsInt[x_left, y] == 0 &&
+                     hilbertPointsInt[x_right, y] == 1 &&
+                     hilbertPointsInt[x, y_top] == 1 &&
+                     hilbertPointsInt[x, y_bottom] == 0)
+            {
+                cell.type = CurveCellType.BR;
+            }
+        }
+
+        return cell;
+    }
+
+    void CreateCurveCorners()
+    {
+        // corners of the curve
+        curvePoints.Clear();
+        for (int x = 1; x < width - 1; x++)
+        {
+            for (int y = 1; y < height - 1; y++)
+            {
+                CurvePoint cPoint = GetCurvePoint(x, y);
+
+                if (cPoint.type.Equals(CurveCellType.N) ||
+                    cPoint.type.Equals(CurveCellType.H) ||
+                    cPoint.type.Equals(CurveCellType.V))
+                    continue;
+
+                curvePoints.Add(cPoint);
+            }
+        }
+    }
+
+    void CreateSegments()
+    {
+        // create path's segments
+        segments.Clear();
+        ArrayList endEdgePoints = new ArrayList();          // to contain ending edge point so that we can skip them
+
+        for (int i = 0; i < curvePoints.Count; i++)
+        {
+            CurvePoint cPoint = (CurvePoint)curvePoints[i];
+            Vector2Int ePoint = new Vector2Int(cPoint.x, cPoint.y);
+
+            if (endEdgePoints.Contains(ePoint))
+                continue;
+
+            if (cPoint.type.Equals(CurveCellType.EL) ||
+                cPoint.type.Equals(CurveCellType.EB))
+            {
+                ArrayList segmentPoints = new ArrayList();
+                Vector2Int point = ePoint;
+
+                while (!segments.ContainsKey(ePoint))
+                {
+                    Vector2Int right = new Vector2Int(point.x + 1, point.y);
+                    Vector2Int left = new Vector2Int(point.x - 1, point.y);
+                    Vector2Int top = new Vector2Int(point.x, point.y + 1);
+                    Vector2Int bottom = new Vector2Int(point.x, point.y - 1);
+
+                    // go right!
+                    if (hilbertPointsInt[right.x, right.y] == 1 &&
+                       !segmentPoints.Contains(right))
+                    {
+                        point = right;
+                        segmentPoints.Add(point);
+                    }
+                    // go up!
+                    else if (hilbertPointsInt[top.x, top.y] == 1 &&
+                            !segmentPoints.Contains(top))
+                    {
+                        point = top;
+                        segmentPoints.Add(point);
+                    }
+                    // go left!
+                    else if (hilbertPointsInt[left.x, left.y] == 1 &&
+                             !segmentPoints.Contains(left))
+                    {
+                        point = left;
+                        segmentPoints.Add(point);
+                    }
+                    // go down!
+                    else if (hilbertPointsInt[bottom.x, bottom.y] == 1 &&
+                            !segmentPoints.Contains(bottom))
+                    {
+                        point = bottom;
+                        segmentPoints.Add(point);
+                    }
+
+                    CurvePoint curvePoint = GetCurvePoint(point.x, point.y);
+
+                    if (curvePoint.type.Equals(CurveCellType.EB) ||
+                        curvePoint.type.Equals(CurveCellType.EL) ||
+                        curvePoint.type.Equals(CurveCellType.ER) ||
+                        curvePoint.type.Equals(CurveCellType.ET) ||
+                        getNeighbours(point.x, point.y, hilbertPointsInt) == 1)
+                    {
+                        endEdgePoints.Add(point);   // last point in a segment
+                        segments.Add(ePoint, segmentPoints);
+                    }
+                }
+            }
+            else if (cPoint.type.Equals(CurveCellType.ET) ||
+                     cPoint.type.Equals(CurveCellType.ER))
+            {
+                ArrayList segmentPoints = new ArrayList();
+                Vector2Int point = ePoint;
+
+                while (!segments.ContainsKey(ePoint))
+                {
+                    Vector2Int right = new Vector2Int(point.x + 1, point.y);
+                    Vector2Int left = new Vector2Int(point.x - 1, point.y);
+                    Vector2Int top = new Vector2Int(point.x, point.y + 1);
+                    Vector2Int bottom = new Vector2Int(point.x, point.y - 1);
+
+                    // go left!
+                    if (hilbertPointsInt[left.x, left.y] == 1 &&
+                        !segmentPoints.Contains(left))
+                    {
+                        point = left;
+                        segmentPoints.Add(point);
+                    }
+                    // go down!
+                    else if (hilbertPointsInt[bottom.x, bottom.y] == 1 &&
+                            !segmentPoints.Contains(bottom))
+                    {
+                        point = bottom;
+                        segmentPoints.Add(point);
+                    }
+
+                    // go right!
+                    else if (hilbertPointsInt[right.x, right.y] == 1 &&
+                            !segmentPoints.Contains(right))
+                    {
+                        point = right;
+                        segmentPoints.Add(point);
+                    }
+                    // go up!
+                    else if (hilbertPointsInt[top.x, top.y] == 1 &&
+                            !segmentPoints.Contains(top))
+                    {
+                        point = top;
+                        segmentPoints.Add(point);
+                    }
+
+                    CurvePoint curvePoint = GetCurvePoint(point.x, point.y);
+
+                    if (curvePoint.type.Equals(CurveCellType.EB) ||
+                        curvePoint.type.Equals(CurveCellType.EL) ||
+                        curvePoint.type.Equals(CurveCellType.ER) ||
+                        curvePoint.type.Equals(CurveCellType.ET) ||
+                        getNeighbours(point.x, point.y, hilbertPointsInt) == 1)
+                    {
+                        endEdgePoints.Add(point);   // last point in a segment
+                        segments.Add(ePoint, segmentPoints);
+                    }
+                }
+            }
+        }
+        Debug.Log("Segments: " + segments.Count);
     }
 
     private void OnDrawGizmos()
@@ -289,6 +673,18 @@ public class MapGenerator : MonoBehaviour
             }
         }
 
+        if (hilbertNegativePointsInt != null)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    Gizmos.color = (hilbertNegativePointsInt[x, y] == 1) ? Color.green : Color.clear;
+                    Vector3 pos = new Vector3(x + .5f, 0, y + .5f);
+                    Gizmos.DrawCube(pos, Vector3.one);
+                }
+            }
+        }
 
         if (hilbertPts != null)
         {
@@ -303,6 +699,46 @@ public class MapGenerator : MonoBehaviour
                                 new Vector3(hilbertPts[i + 1].x + .5f, 0, hilbertPts[i + 1].y + .5f));
             }
         }
+
+        if (curvePoints != null)
+        {
+            for (int i = 0; i < curvePoints.Count; i++)
+            {
+                CurvePoint cPoint = (CurvePoint)curvePoints[i];
+                Gizmos.color = (hilbertPointsInt[cPoint.x, cPoint.y] == 1) ? Color.red : Color.clear;
+
+                Vector3 pos = new Vector3(cPoint.x + .5f, 0, cPoint.y + .5f);
+                Gizmos.DrawCube(pos, Vector3.one * 2);
+            }
+        }
+
+        // display segments
+        if (segments != null)
+        {
+            foreach (KeyValuePair<Vector2, ArrayList> segment in segments)
+            {
+                for (int i = 0; i < segment.Value.Count; i++)
+                {
+                    Vector2Int pos = (Vector2Int)segment.Value[i];
+                    Gizmos.color = Color.yellow;
+                    Vector3 pos3 = new Vector3(pos.x + .5f, 0, pos.y + .5f);
+                    Gizmos.DrawCube(pos3, Vector3.one * 2);
+
+                    if (i == segment.Value.Count - 1)
+                    {
+                        Vector3 lastPoint = new Vector3(pos.x + .5f, 0, pos.y + .5f);
+                        Gizmos.color = Color.red;
+                        Gizmos.DrawSphere(lastPoint, 2f);
+                    }
+                }
+
+                Vector2 posKey = (Vector2)segment.Key;
+                Vector3 posKey3 = new Vector3(posKey.x + .5f, 0, posKey.y + .5f);
+                Gizmos.color = Color.red;
+                Gizmos.DrawSphere(posKey3, 2f);
+            }
+        }
     }
+
 
 }
